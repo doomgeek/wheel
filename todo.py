@@ -17,38 +17,31 @@ def add_due_date_from_shortcut(task):
         if sck in due_date_shortcuts:
             task.title = task.title.replace("^{}".format(shortcut),
                                             "").strip()
-            task["due"] = due_date_shortcuts[sck]()
-    return task
-
-
-def add_tags(task):
-    title = task["title"]
-    for tag in re.findall("#(\w+)", title):
-        if "tags" not in task:
-            task["tags"] = []
-        task["tags"].append(tag)
-    return task
+            task.set_due(due_date_shortcuts[sck]())
 
 
 preprocessors = [
     add_due_date_from_shortcut,
-#    add_tags,
 ]
 
 
 class Task(object):
-    def __init__(self, title):
-        task = {"title": title}
+    def __init__(self, title, due=None):
+        self.set_title(title)
+        self.set_due(due)
         for func in preprocessors:
-            task = func(task)
-        return task
+            func(self)
+
+    def set_title(self, title):
+        self.title = title
+
+    def set_due(self, due):
+        self.due = due
+
+    def to_sql(self):
+        return ("insert into task (title, due) values (?, ?)", (self.title,
+                                                                self.due))
 
 
-
-
-
-
-def save_task(task, db):
-
-
-print create_task("Get stuff done ^today #matt #is #awesome")
+task = Task("Get stuff done ^today #matt #is #awesome")
+print task.to_sql()
