@@ -96,5 +96,6 @@ database.create()
 task01 = Task("Get stuff done ^today #matt #is #awesome").save()
 task02 = Task("Eat Food ALLL DAY ^today #matt #is #awesome").save()
 task03 = Task("Ride my bike ALLL DAY ^today #matt #is #awesome").save()
+task04 = Task("Ride my bike ALLL DAY asdf ^today #matt #is #awesome").save()
 
 import pdb; pdb.set_trace()
