@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 
+import os
 import re
 import sqlite3
 
 from datetime import date
+
+
+DATABASE_PATH = os.path.join(os.environ["HOME"], ".tasks.sqlite3")
 
 
 class SQLite3Database(object):
@@ -26,7 +30,7 @@ class SQLite3Database(object):
         return self._connection
 
 
-class TaskSQLManager(object):
+class SQLite3TaskManager(object):
     def __init__(self, Task):
         self._cls = Task.add_manager(self)
 
@@ -34,20 +38,51 @@ class TaskSQLManager(object):
         self._db = database
 
     def to_create(self):
-        return ("create table task (id integer primary key autoincrement, "
-                "                   title text, due text)",)
+        return ("create table if not exists task (id integer "
+                "primary key autoincrement, title text, due text)",
+                "create unique index if not exists idx_task_title "
+                "on task (title)")
+
+    def to_update(self, task):
+        return ("update task set title = ?, due = ? where id = ?",
+                (task.title, task.due, task.pk))
 
     def to_insert(self, task):
         return ("insert into task (title, due) values (?, ?)",
                 (task.title, task.due))
 
+    def to_select(self, task, **kwargs):
+        if "pk" in kwargs:
+            q = ("select id, title, due from task where id = ?",
+                 (kwargs["pk"],))
+        elif "title" in kwargs:
+            q = ("select id, title, due from task where title = ?",
+                 (kwargs["title"],))
+        else:
+            q = None
+        return q
+
     def save(self, task):
         connection = self._db.get_connection()
         cursor = connection.cursor()
-        cursor.execute(*self.to_insert(task))
-        _id = cursor.lastrowid
+        if task.pk:
+            cursor.execute(*self.to_update(task))
+            task.pk = cursor.lastrowid
+        else:
+            try:
+                cursor.execute(*self.to_insert(task))
+            except sqlite3.IntegrityError:
+                # This could result in loss of data if the user creates
+                # a duplicate object with less detail than the original.
+                # It may be better to throw an exception and let the
+                # user confirm that they mean to do this.  But, for now,
+                # I'm going to let it stand as is.
+                cursor.execute(*self.to_select(task, title=task.title))
+                task.pk = cursor.fetchone()[0]
+                self.save(task)
         cursor.close()
-        return _id
+        connection.commit()
+        return task
 
 
 class Task(object):
@@ -69,7 +104,7 @@ class Task(object):
         return cls
 
     def save(self):
-        self.pk = self._manager.save(self)
+        self = self._manager.save(self)
         return self
 
 
@@ -79,8 +114,8 @@ def add_due_date_from_shortcut(task):
         "tomorrow": lambda: date.today() + timedelta(days=1),
         "yesterday": lambda: datetime.today() - timedelta(days=1),
     }
-    for shortcut in re.findall(r"\^(\w+)", task.title):
-        sck = shortcut.lower()  # short cut key
+    for shortcut in re.findall(r"\^(\w+\s*)", task.title):
+        sck = shortcut.lower().strip()  # short cut key
         if sck in due_date_shortcuts:
             task.title = task.title.replace("^{}".format(shortcut),
                                             "").strip()
@@ -89,13 +124,11 @@ def add_due_date_from_shortcut(task):
 
 preprocessors = (add_due_date_from_shortcut,)
 
-database = SQLite3Database(":memory:")
-database.register(TaskSQLManager(Task.add_preprocessors(preprocessors)))
+database = SQLite3Database(DATABASE_PATH)
+database.register(SQLite3TaskManager(Task.add_preprocessors(preprocessors)))
 database.create()
 
 task01 = Task("Get stuff done ^today #matt #is #awesome").save()
 task02 = Task("Eat Food ALLL DAY ^today #matt #is #awesome").save()
 task03 = Task("Ride my bike ALLL DAY ^today #matt #is #awesome").save()
 task04 = Task("Ride my bike ALLL DAY asdf ^today #matt #is #awesome").save()
-
-import pdb; pdb.set_trace()
